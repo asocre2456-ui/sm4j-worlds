@@ -1,0 +1,52 @@
+name: "Backup Solo Releases (Mundos)"
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Todos los días a las 21:00 ARG
+  workflow_dispatch:
+
+jobs:
+  backup_releases:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      # PASO 1: Instalar Rclone (Ya no instalamos Postgres)
+      - name: Instalar Rclone
+        run: |
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+
+      - name: Configurar Rclone
+        env:
+          RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONFIG_CONTENT" > ~/.config/rclone/rclone.conf
+
+      # PASO 2: Descargar SOLO los Releases (Tus mundos/niveles)
+      - name: Descargar Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p backups_mundos
+          echo "🔍 Buscando versiones de mundos..."
+          
+          # Descarga cada versión en su propia carpeta
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read tag; do
+            echo "⬇️ Bajando mundo versión: $tag"
+            mkdir -p "backups_mundos/$tag"
+            gh release download "$tag" --dir "backups_mundos/$tag" --pattern "*" || true
+          done
+
+      # PASO 3: Subir a Drive (En una sub-carpeta separada para no mezclar)
+      - name: Subir a Google Drive
+        run: |
+          # AQUI: Cambié la ruta de destino a 'SM4J_Backups/Mundos'
+          # Puedes cambiarle el nombre 'Mundos' por el que prefieras.
+          rclone copy backups_mundos/ midrive:SM4J_Backups/Mundos --transfers=4
+          
+          echo "✅ Mundos subidos a Google Drive."
