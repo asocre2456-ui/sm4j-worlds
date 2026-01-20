@@ -1,0 +1,47 @@
+name: "Backup Cloudflare R2 a Drive"
+
+on:
+  schedule:
+    - cron: '30 0 * * *' # A las 21:30 ARG (media hora después del otro, para no saturar)
+  workflow_dispatch:
+
+jobs:
+  backup_buckets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Instalar Rclone
+        run: |
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+
+      - name: Configurar Google Drive (Destino)
+        env:
+          RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONFIG_CONTENT" > ~/.config/rclone/rclone.conf
+
+      - name: Configurar Cloudflare R2 (Origen)
+        # Aquí ocurre la magia: Configuración por variables de entorno
+        run: |
+          # Configuramos un remoto llamado 'r2cloud' al vuelo
+          rclone config create r2cloud s3 \
+          provider Cloudflare \
+          access_key_id ${{ secrets.R2_ACCESS_KEY_ID }} \
+          secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }} \
+          endpoint https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com \
+          acl private
+
+      - name: 1. Backup Bucket 'sm4j-levels'
+        run: |
+          echo "📦 Copiando niveles..."
+          # Origen: r2cloud:sm4j-levels -> Destino: midrive:SM4J_Backups/R2_Levels
+          rclone copy r2cloud:sm4j-levels midrive:SM4J_Backups/R2_Levels --transfers=8 --checkers=16
+          echo "✅ Niveles copiados."
+
+      - name: 2. Backup Bucket 'sm4j-thumbnails'
+        run: |
+          echo "🖼️ Copiando miniaturas..."
+          # Origen: r2cloud:sm4j-thumbnails -> Destino: midrive:SM4J_Backups/R2_Thumbnails
+          rclone copy r2cloud:sm4j-thumbnails midrive:SM4J_Backups/R2_Thumbnails --transfers=8 --checkers=16
+          echo "✅ Miniaturas copiadas."
